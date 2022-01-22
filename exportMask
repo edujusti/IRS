@@ -1,0 +1,99 @@
+
+var state = 'PE';// select Brazilian state
+var cloud = 40; // Cloud pixel percentage
+
+// Land Use and transportation vectos
+var table = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/intermediario/landuseTransportUF")
+  .select('sigla')
+  .filter(ee.Filter.eq('sigla', state))
+  ;
+
+// definição de datas
+var start = '2020-1-1';
+var end   = '2020-12-31';
+
+Map.centerObject(table);
+
+function MNDWI(image) {
+  var mndwi = image.normalizedDifference(['B3', 'B11']).rename('MNDWI').toDouble();
+  return image.addBands(mndwi);
+}
+ 
+function NDVI(image) {
+  var ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI').toDouble();
+  return image.addBands(ndvi);
+}
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask);
+}
+
+var S2 = ee.ImageCollection('COPERNICUS/S2_SR')
+  .filterBounds(table)
+  .filterDate(start, end)
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud))
+  .map(MNDWI)
+  .map(NDVI)
+  .map(maskS2clouds)
+  ;
+
+var rgb = S2.select('B2','B3','B4').median().clip(table);
+var veg = S2.select('NDVI').max().clip(table);
+var water = S2.select('MNDWI').max().clip(table);
+
+//Map.addLayer(table);
+Map.addLayer(rgb, {min: 0, max: 2500, bands: ['B4', 'B3', 'B2']}, 'RGB');
+
+Map.addLayer(veg, {min: -0.3, max: 1, palette: ['red', 'white', 'green']}, "NDVI");
+//Map.addLayer(water, {min: -1, max: 1, palette: ['gray', 'white', 'blue']}, "MNDWI");
+
+var maskMNDWI = water.lt(0.5);
+//Map.addLayer(maskMNDWI, {}, 'MNDWI mask');
+var maskNDVI = veg.select('NDVI').lt(0.40);
+//Map.addLayer(mascaraNDVI, {}, 'NDVI mask');
+
+var mask = maskMNDWI.multiply(maskNDVI);
+//Map.addLayer(mask, {}, 'NDVI and MNDWI mask');
+
+var mask2 = mask.select('MNDWI').eq(1);
+var mask3 = mask.updateMask(mask2);
+
+//Map.centerObject(table, 8);
+Map.addLayer(table, {}, 'Feições');
+
+var contour = ee.Image().paint(table,0,3);
+Map.addLayer(contour, {palette: ['black']}, 'Contour');
+
+
+
+Map.addLayer(mask3, {}, 'Masked');
+
+// converte o arquivo raster das Landuse e Transport em vetor.
+var maskVetor = mask3.reduceToVectors(
+  {
+    geometry: table,
+    crs: mask.projection(),
+    scale: 10,
+    geometryType: 'polygon',
+    eightConnected: false,
+    labelProperty: 'MNDWI',
+//    reducer: ee.Reducer.mean()
+  });
+
+//Map.addLayer(maskVetor);
+// exportação dos vetore Landuse e Transport sem água e vegetação.
+Export.table.toDrive({
+  collection: maskVetor,
+  description: 'landuseTransport_'+state,
+  fileFormat: 'SHP'
+});
