@@ -88,7 +88,6 @@ var maskVetor = mask3.reduceToVectors(
 //    reducer: ee.Reducer.mean()
   });
 
-//Map.addLayer(maskVetor);
 // Export landuse and transport vectors
 Export.table.toDrive({
   collection: maskVetor,
