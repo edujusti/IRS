@@ -11,3 +11,10 @@
 <p>We aggregated the remaining vectors from the polygons of buildings and land uses. To avoid high values for small buildings, we eliminated the features of small areas. Later, we converted all vectors to polylines. In ArcGIS, we applied the line-density function. At the end of process, the rasters and vectors of the remaining buildings and land uses were imported to GEE.
   
 <p>The rsiSentinel script groups vectors and raster files to make up the roads and structures index. In addition, it maps urban surfaces not covered by water or vegetation, displays the confusion matrix and calculates the quantitative of areas per municipality in decameters.
+
+<p><b>Data availability</b>
+  <ul>
+    <li><b>Brazilian municipalities</b>: https://www.ibge.gov.br/geociencias/downloads-geociencias.html</li>
+    <li><b>OpenStreetMap</b>: https://download.geofabrik.de/south-america/brazil.html</li>
+    <li><b>Index of roads and structures and scripts</b>: https://code.earthengine.google.com/?accept_repo=users/ejustiniano/IRS</li>
+  </ul>
