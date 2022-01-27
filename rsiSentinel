@@ -5,7 +5,8 @@ var MNDWI_T = 0.4;
 var IVE_T = 500;
 
 // Brazilian border
-var br = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/brasil')
+var br = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/brasil');
+Map.setCenter(-48.4, -1.4, 13); // large area view may return the following error: "Output of image computation is too large"
 
 // structures area
 var NO  = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/LTB_area/LTB_area_NO');
@@ -135,7 +136,6 @@ Export.table.toDrive({
 */
 
 // area of municipalities in pixels
-
 /*
 var state = 'AM';
 
@@ -158,5 +158,4 @@ Export.table.toDrive({
   description: 'municipalityPixels_'+state,
   fileFormat: 'CSV'
 });
-
 */
