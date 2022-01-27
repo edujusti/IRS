@@ -1,0 +1,37 @@
+var imgCol = ee.ImageCollection("users/ejustiniano/EM/capitais");
+var table = ee.FeatureCollection("users/ejustiniano/EM/recorteCapitaisRef");
+var table2 = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/capitaisBordas");
+
+var rectangle = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/capitaisPoligValidacao").union();
+var edgeBuffer = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/capitaisBordas');
+
+var planet = ee.ImageCollection('users/ejustiniano/EM/capitais').mean();
+var planetComplem = ee.ImageCollection('users/ejustiniano/EM/complemento').mean();
+
+var points = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/Pontos_600_corrig");
+
+var urban = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/Pontos_600_corrig")
+  .select('classe1')
+  .filter(ee.Filter.eq("classe1", 'Urb'));
+
+var veg = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/Pontos_600_corrig")
+  .select('classe1')
+  .filter(ee.Filter.eq("classe1", 'Veg'));
+
+var water = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/Pontos_600_corrig")
+  .select('classe1')
+  .filter(ee.Filter.eq("classe1", 'Wat'));
+
+Map.addLayer(planetComplem.clip(rectangle), {'bands': ['b3', 'b2', 'b1'], 'min': 0.0, 'max': 2000.0}, 'Capitais - complemento');
+Map.addLayer(planet.clip(rectangle), {'bands': ['b3', 'b2', 'b1'], 'min': 0.0, 'max': 2000.0}, 'Capitais');
+
+var buffer = ee.Image().paint(edgeBuffer,0,2);
+Map.addLayer(buffer, {palette: ['black']}, 'Faixa de Validação')
+Map.addLayer(points, {}, "pontos");
+
+Map.addLayer(urban.draw({color: 'red'}), {}, 'Urbano');
+Map.addLayer(veg.draw({color: 'Green'}), {}, 'Vegetação');
+Map.addLayer(water.draw({color: 'blue'}), {}, 'Água');
+
+var lineRect = ee.Image().paint(rectangle,0,0.5);
+Map.addLayer(lineRect, {palette: ['red']}, 'Recorte');
