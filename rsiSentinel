@@ -5,16 +5,16 @@ var MNDWI_T = 0.4;
 var IVE_T = 500;
 
 // Brazilian border
-var br = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/brasil');
+var br = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/brasil');
 Map.setCenter(-48.4, -1.4, 13); // large area view may return the following error: "Output of image computation is too large"
 
 // structures area
-var NO  = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/LTB_area/LTB_area_NO');
-var NE  = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/LTB_area/LTB_area_NE');
-var CO  = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/LTB_area/LTB_area_CO');
-var SE1 = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/LTB_area/LTB_area_SE1');
-var SE2 = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/LTB_area/LTB_area_SE2');
-var SU  = ee.FeatureCollection('users/ejustiniano/doutorado/fluxograma_IVE/LTB_area/LTB_area_SU');
+var NO  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_NO');
+var NE  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_NE');
+var CO  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_CO');
+var SE1 = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SE1');
+var SE2 = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SE2');
+var SU  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SU');
 var LTB_area = (NO.merge(NE).merge(CO).merge(SE1).merge(SE2).merge(SE2).merge(SU));
 
 var LTB_areaImg = LTB_area
@@ -24,10 +24,10 @@ var LTB_areaImg = LTB_area
 }).rename('b1').multiply(450).unmask();
 
 // streets, avenues and roads kernell
-var roads = ee.ImageCollection('users/ejustiniano/buffers/hmRoads').max();
+var roads = ee.ImageCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/roads/hmRoads').max();
 
 // structures border kernell
-var LTBborder = ee.ImageCollection('users/ejustiniano/doutorado/fluxograma_IVE/LTB')
+var LTBborder = ee.ImageCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_line/ltb')
   .sum();
 
 var IVE = ee.ImageCollection([roads, LTB_areaImg, LTBborder]).max().clip(br).reproject('EPSG:4326', null, 10);
@@ -79,6 +79,8 @@ Map.addLayer(rgb, {min: 0, max: 3000, bands: ['B4', 'B3', 'B2']}, 'RGB');
 //Map.addLayer(veg, {min: -0.3, max: 1, palette: ['red', 'white', 'green']}, "NDVI");
 //Map.addLayer(water, {min: -1, max: 1, palette: ['gray', 'white', 'blue']}, "MNDWI");
 
+Map.addLayer(IVE, {min:0, max:2000}, 'IVE');
+
 var maskMNDWI = water.lt(MNDWI_T);
 //Map.addLayer(maskMNDWI, {}, 'MNDWI sask');
 var maskNDVI = veg.select('NDVI').lt(NDVI_T);
@@ -100,13 +102,13 @@ var nightCol = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')
 var night = nightCol.select('avg_rad').mean();
 var nightLimite = night.gt(4);
 var nightIVE = mask2.multiply(nightLimite);
-Map.addLayer(nightIVE, {}, 'IRS, NDVI, MNDWI e luz');
+Map.addLayer(nightIVE, {}, 'IRS, NDVI, MNDWI and night light');
 
 //Map.addLayer(IVE, {min:0, max: 2000, palette:['white', 'black'], opacity:0.5}, 'IVE');
 
-// accuracy calculation
+// accuracy values
 /*
-var points = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/Pontos_600_corrig").select('urb');
+var points = ee.FeatureCollection("projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/validation/Pt600C1").select('urb');
 print(points);
 
 var samples = mask2.unmask().sampleRegions({
@@ -119,12 +121,21 @@ var samples = mask2.unmask().sampleRegions({
 var acuracia = samples.errorMatrix('urb', 'b1');
 print('Matriz de confusão: ', acuracia);
 
-//print('Accuracy:' , acuracia.accuracy());
-//print('Consumers accuracy:' , acuracia.consumersAccuracy());
-//print('Producers accuracy:' , acuracia.producersAccuracy());
-//print('Kappa:' , acuracia.kappa());
-*/
+var l1c1 = acuracia.array().get([0,0]);
+var l1c2 = acuracia.array().get([0,1]);
+var l2c1 = acuracia.array().get([1,0]);
+var l2c2 = acuracia.array().get([1,1]);
 
+var sensitiviy = l1c1.divide((l1c1.add(l1c2)));
+print('Sensitivity', sensitiviy);
+
+var specificity = l2c2.divide((l2c1.add(l2c2)));
+print('Specificity', specificity);
+
+print('Accuracy:' , acuracia.accuracy());
+print('Producers accuracy:' , acuracia.producersAccuracy());
+print('Consumers accuracy / Predictive value:' , acuracia.consumersAccuracy());
+*/
 
 //Export results to csv file
 /*
@@ -135,9 +146,15 @@ Export.table.toDrive({
 });
 */
 
-// area of municipalities in pixels
+// area of municipalities by states in pixels
 /*
-var state = 'AM';
+var states = ['AC','AL','AM','AP','BA','CE','DF','ES',
+  'GO','MA','MG','MS','MT','PA','PB','PE','PI',
+  'PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+
+states.map(function(state){
+  
+//var state = 'RS'; // Select Brazilian state
 
 var munic = ee.FeatureCollection("users/ejustiniano/FLG0244/BR_Municipios_2019")
   .select('NM_MUN', 'SIGLA_UF', 'codmunic')
@@ -149,13 +166,14 @@ var pixelMunic = mask2.reduceRegions({
   reducer: ee.Reducer.sum(),
   scale: 10
 });
-//print('Píxels por município', pixelMunic);
 
-var tabela = pixelMunic.select(['codmunic', 'NM_MUN', 'SIGLA_UF', 'sum']).select(['.*'],null,false);
+var table = pixelMunic.select(['codmunic', 'NM_MUN', 'SIGLA_UF', 'sum']).select(['.*'],null,false);
 
 Export.table.toDrive({
-  collection: tabela,
+  collection: table,
   description: 'municipalityPixels_'+state,
   fileFormat: 'CSV'
+});
+  
 });
 */
