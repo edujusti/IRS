@@ -2,13 +2,12 @@
 var state = 'PE';// select Brazilian state
 var cloud = 40; // Cloud pixel percentage
 
-// Land Use and transportation vectos
-var table = ee.FeatureCollection("users/ejustiniano/doutorado/fluxograma_IVE/intermediario/landuseTransportUF")
+// Land Use and transportation vector
+var table = ee.FeatureCollection("projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/landUseBuildings/landuseTransportUF")
   .select('sigla')
   .filter(ee.Filter.eq('sigla', state))
   ;
 
-// definição de datas
 var start = '2020-1-1';
 var end   = '2020-12-31';
 
@@ -26,15 +25,10 @@ function NDVI(image) {
 
 function maskS2clouds(image) {
   var qa = image.select('QA60');
-
-  // Bits 10 and 11 are clouds and cirrus, respectively.
   var cloudBitMask = 1 << 10;
   var cirrusBitMask = 1 << 11;
-
-  // Both flags should be set to zero, indicating clear conditions.
   var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
       .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
-
   return image.updateMask(mask);
 }
 
@@ -46,7 +40,7 @@ var S2 = ee.ImageCollection('COPERNICUS/S2_SR')
   .map(NDVI)
   .map(maskS2clouds)
   ;
-
+ 
 var rgb = S2.select('B2','B3','B4').median().clip(table);
 var veg = S2.select('NDVI').max().clip(table);
 var water = S2.select('MNDWI').max().clip(table);
@@ -69,14 +63,13 @@ var mask2 = mask.select('MNDWI').eq(1);
 var mask3 = mask.updateMask(mask2);
 
 //Map.centerObject(table, 8);
-Map.addLayer(table, {}, 'Feições');
+Map.addLayer(table, {}, 'Features');
 
 var contour = ee.Image().paint(table,0,3);
 Map.addLayer(contour, {palette: ['black']}, 'Contour');
 
 Map.addLayer(mask3, {}, 'Masked');
 
-// Raster to vector
 var maskVetor = mask3.reduceToVectors(
   {
     geometry: table,
@@ -88,9 +81,11 @@ var maskVetor = mask3.reduceToVectors(
 //    reducer: ee.Reducer.mean()
   });
 
-// Export landuse and transport vectors
+//Map.addLayer(maskVetor);
+
 Export.table.toDrive({
   collection: maskVetor,
   description: 'landuseTransport_'+state,
   fileFormat: 'SHP'
 });
+
