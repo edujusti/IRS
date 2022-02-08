@@ -16,5 +16,5 @@
   <ul>
     <li><b>Brazilian municipalities</b>: https://www.ibge.gov.br/geociencias/downloads-geociencias.html</li>
     <li><b>OpenStreetMap</b>: https://download.geofabrik.de/south-america/brazil.html</li>
-    <li><b>Index of roads and structures and scripts</b>: https://code.earthengine.google.com/?accept_repo=users/ejustiniano/IRS</li>
+    <li><b>Scripts in the Google Earth Engine (GEE)</b>: https://code.earthengine.google.com/?accept_repo=users/ejustiniano/IRS</li>
   </ul>
