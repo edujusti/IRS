@@ -179,10 +179,11 @@ Export.table.toDrive({
 var countries = ee.FeatureCollection('USDOS/LSIB/2017');
 
 //GHSL data
-var GHSL2018_BuiltUp = ee.Image('projects/ee-bmm-mapbiomas/assets/GHS_BUILT_LDSMT_GLOBE_R2018A_3857_30_V2').gte(4);
+var GHSL2018_BuiltUp = ee.Image('projects/ee-bmm-mapbiomas/assets/GHS_BUILT_LDSMT_GLOBE_R2018A_3857_30_V2').gte(3);
 GHSL2018_BuiltUp = GHSL2018_BuiltUp.clip(countries.filter(ee.Filter.eq('COUNTRY_NA','Brazil')));
-//print('GHSL2018_BuiltUp:',GHSL2018_BuiltUp)
-Map.addLayer(GHSL2018_BuiltUp,{},'GHSL2018_BuiltUp', false);
+
+var mask_GHSL_1 = GHSL2018_BuiltUp.select('b1').eq(1);
+var mask_GHSL = GHSL2018_BuiltUp.updateMask(mask_GHSL_1);
 
 var accCalc = function(p){
     var listagem = ee.List.sequence(1,600).shuffle().slice(0,p,1); // sort and select point group
@@ -218,6 +219,7 @@ Export.table.toDrive({
   selectors: ['accuracy', 'nPoints'],
   fileFormat: 'CSV'});
 
+Map.addLayer(mask_GHSL,{palette:['orange']},'GHSL2018_BuiltUp', false);
 Map.addLayer(mapbiomas, {}, 'Urban Mapbiomas');
 Map.addLayer(mascara2, {min:0, max: 2000, palette:['white', 'black'], opacity:0.5}, 'IRS classification');
 Map.addLayer(totalPoints, {color: 'red'}, 'Validation Points');
