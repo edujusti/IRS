@@ -1,0 +1,139 @@
+// Thresholds 
+var cloud = 20;
+var NDVI_T = 0.6;
+var MNDWI_T = 0.4;
+var IVE_T = 500;
+var radius_T = 'r0030'; // available radius : r0010, r0015, r0020, r0025, r0030
+ 
+// Brazilian border
+var brazil = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/brasil');
+
+var rectangle = ee.FeatureCollection('users/ejustiniano/doutorado/raio/bufferCapitais');
+Map.addLayer(rectangle, {}, 'Rectangles')
+Map.setCenter(-48.4, -1.4, 13); // large area view may return the following error: "Output of image computation is too large"
+
+
+// structures area
+var CO  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_CO');
+var NO  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_NO');
+var NE  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_NE');
+var SE1 = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SE1');
+var SE2 = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SE2');
+var SU  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SU');
+
+var LTB_area = (NO.merge(NE).merge(CO).merge(SE1).merge(SE2).merge(SE2).merge(SU));
+
+var LTBvalue = IVE_T * 1.1;
+
+var LTB_areaImg = LTB_area
+  .reduceToImage({
+    properties: ['b1'],
+    reducer: ee.Reducer.first()
+}).rename('b1').multiply(LTBvalue).unmask();
+
+
+// Roads and LTB perimeter kernell
+var roadsStructuresKernel = ee.ImageCollection('users/ejustiniano/doutorado/raio/'+radius_T).max();
+
+var juntos = ee.ImageCollection([roadsStructuresKernel, LTB_areaImg]).max().clip(rectangle).reproject('EPSG:4326', null, 10);
+
+//var escala = juntos.projection().nominalScale();
+//print(escala);
+
+var start = '2020-1-1';
+var end   = '2020-12-31';
+
+function MNDWI(image) {
+  var mndwi = image.normalizedDifference(['B3', 'B11']).rename('MNDWI').toDouble();
+  return image.addBands(mndwi);
+}
+ 
+function NDVI(image) {
+  var ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI').toDouble();
+  return image.addBands(ndvi);
+}
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask)//.divide(10000);
+}
+
+var S2 = ee.ImageCollection('COPERNICUS/S2_SR')
+//  .filterBounds(brazil)
+  .filterDate(start, end)
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',cloud))
+  .map(MNDWI)
+  .map(NDVI)
+  .map(maskS2clouds)
+  ;
+
+var rgb = S2.select('B2','B3','B4').median().clip(rectangle);
+var veg = S2.select('NDVI').max().clip(rectangle);
+var water = S2.select('MNDWI').max().clip(rectangle);
+
+Map.addLayer(rgb, {min: 0, max: 3000, bands: ['B4', 'B3', 'B2']}, 'RGB');
+//Map.addLayer(veg, {min: -0.3, max: 1, palette: ['red', 'white', 'green']}, "NDVI");
+//Map.addLayer(water, {min: -1, max: 1, palette: ['gray', 'white', 'blue']}, "MNDWI");
+
+Map.addLayer(juntos, {min:0, max: 2000, palette:['white', 'black'], opacity:0.5}, 'Index of roads and structures');
+ 
+var mascaraMNDWI = water.lt(MNDWI_T);
+//Map.addLayer(mascaraMNDWI, {}, 'MNDWI mask');
+var mascaraNDVI = veg.select('NDVI').lt(NDVI_T);
+//Map.addLayer(mascaraNDVI, {}, 'NDVI mask');
+
+var mascara = mascaraMNDWI.multiply(mascaraNDVI);
+//Map.addLayer(mascara, {}, 'NDVI and MNDWI mask');
+
+var LTB = juntos.select('b1').gt(IVE_T);
+var IVE = LTB.multiply(mascara);
+//Map.addLayer(IVE, {}, 'IRS, NDVI e MNDWI');
+
+var mascara1 = IVE.select('b1').eq(1);
+var mascara2 = IVE.updateMask(mascara1).clip(rectangle);
+Map.addLayer(mascara2, {}, 'IRS, NDVI e MNDWI');
+
+var nightCol = ee.ImageCollection('NOAA/VIIRS/DNB/MONTHLY_V1/VCMSLCFG')
+  .filter(ee.Filter.date(start, end));
+var night = nightCol.select('avg_rad').mean();
+var nightLimite = night.gt(4);
+var nightIVE = mascara2.multiply(nightLimite);
+Map.addLayer(nightIVE, {}, 'IRS, NDVI, MNDWI and night light');
+
+
+//Accuracy
+
+var pontos = ee.FeatureCollection("projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/validation/Pt600C1").select('urb');
+print('Points', pontos);
+Map.addLayer(pontos, {color:'red'}, 'Valildation points')
+
+var sample = mascara2.unmask().sampleRegions({
+  collection: pontos.select('urb'),
+  geometries: true,
+  scale: 10
+});
+
+var acuracia = sample.errorMatrix('urb', 'b1').array();
+print('Confusion matrix: ', acuracia);
+var l1c1 = acuracia.get([0,0]);
+var l1c2 = acuracia.get([0,1]);
+var l2c1 = acuracia.get([1,0]);
+var l2c2 = acuracia.get([1,1]);
+
+var sensitiviy = l1c1.divide((l1c1.add(l1c2)));
+print('Sensitivity', sensitiviy);
+
+var specificity = l2c2.divide((l2c1.add(l2c2)));
+print('Specificity', specificity);
+
+var accuracy = (l1c1.add(l2c2).divide(l1c1.add(l1c2).add(l2c1).add(l2c2)))
+print('Accuracy', accuracy)
