@@ -1,0 +1,223 @@
+var totalPoints = ee.FeatureCollection("projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/validation/Pt600C1")
+               .randomColumn('random');
+
+// samples groupping 
+  var list = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+    110, 120, 130, 140, 150, 160, 170, 180, 190, 200,
+    210, 220, 230, 240, 250, 260, 270, 280, 290, 300
+    ];
+
+// Thresholds 
+var cloud = 20;
+var NDVI_T = 0.6;
+var MNDWI_T = 0.4;
+var IVE_T = 500;
+
+// Brazilian border
+var brazil = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/brasil');
+//Map.setCenter(-48.4, -1.4, 13); // large area view may return the following error: "Output of image computation is too large"
+
+
+// structures area
+var CO  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_CO');
+var NO  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_NO');
+var NE  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_NE');
+var SE1 = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SE1');
+var SE2 = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SE2');
+var SU  = ee.FeatureCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_area/LTB_area_SU');
+
+var LTB_area = (NO.merge(NE).merge(CO).merge(SE1).merge(SE2).merge(SE2).merge(SU));
+
+var LTBvalue = IVE_T * 1.1;
+var LTB_areaImg = LTB_area
+  .reduceToImage({
+    properties: ['b1'],
+    reducer: ee.Reducer.first()
+}).rename('b1').multiply(LTBvalue).unmask();
+
+// streets, avenues and roads kernell
+var roads = ee.ImageCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/roads/hmRoads').max();
+
+// structures border kernell
+var IVEcollection = ee.ImageCollection('projects/mapbiomas-workspace/public/data/justiniano_et_al_2022_IRS/LTB_line/ltb')
+  .sum();
+
+var juntos = ee.ImageCollection([roads, LTB_areaImg, IVEcollection]).max().clip(brazil).reproject('EPSG:4326', null, 10);
+
+var start = '2020-1-1';
+var end   = '2020-12-31';
+
+function MNDWI(image) {
+  var mndwi = image.normalizedDifference(['B3', 'B11']).rename('MNDWI').toDouble();
+  return image.addBands(mndwi);
+}
+ 
+function NDVI(image) {
+  var ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI').toDouble();
+  return image.addBands(ndvi);
+}
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask);
+}
+
+var S2 = ee.ImageCollection('COPERNICUS/S2_SR')
+//  .filterBounds(brasil)
+  .filterDate(start, end)
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',cloud))
+  .map(MNDWI)
+  .map(NDVI)
+  .map(maskS2clouds)
+  ;
+
+var rgb = S2.select('B2','B3','B4').median().clip(brazil);
+var veg = S2.select('NDVI').max().clip(brazil);
+var water = S2.select('MNDWI').max().clip(brazil);
+
+Map.addLayer(rgb, {min: 0, max: 3000, bands: ['B4', 'B3', 'B2']}, 'RGB', false);
+
+var mascaraMNDWI = water.lt(MNDWI_T);
+var mascaraNDVI = veg.select('NDVI').lt(NDVI_T);
+
+var mascara = mascaraMNDWI.multiply(mascaraNDVI);
+
+var LTB = juntos.select('b1').gt(IVE_T);
+var IVE = LTB.multiply(mascara);
+
+var mascara1 = IVE.select('b1').eq(1);
+var mascara2 = IVE.updateMask(mascara1);
+
+//Accuracy calculation
+
+var accCalc = function(p){
+    var listagem = ee.List.sequence(1,600).shuffle().slice(0,p,1); // sort and select point group
+    var points = totalPoints.filter(ee.Filter.inList('seq', listagem));
+
+    var size = points.size();
+    
+    var sample = mascara2.unmask().sampleRegions({
+      collection: points.select('urb'),
+      geometries: true,
+      scale: 10
+    });
+    
+    var accuracyCalc = sample.errorMatrix('urb', 'b1').array();
+    
+    var l1c1 = accuracyCalc.get([0,0]);
+    var l1c2 = accuracyCalc.get([0,1]);
+    var l2c1 = accuracyCalc.get([1,0]);
+    var l2c2 = accuracyCalc.get([1,1]);
+    
+    //var sensitiviy = l1c1.divide((l1c1.add(l1c2)));
+    //var specificity = l2c2.divide((l2c1.add(l2c2)));
+    var accuracy = (l1c1.add(l2c2).divide(l1c1.add(l1c2).add(l2c1).add(l2c2)));
+    
+return ee.Feature(null, {'accuracy': accuracy, 'nPoints': size});
+};
+
+var result_IRS = ee.FeatureCollection(list.map(accCalc));
+
+Export.table.toDrive({
+  collection: result_IRS,
+  description: 'accuracy-IVE-points',
+  selectors: ['accuracy', 'nPoints'],
+  fileFormat: 'CSV'});
+
+//Accuracy assessment function for Mapbiomas
+var mapbiomas = ee.Image('projects/mapbiomas-workspace/public/collection6/mapbiomas_collection60_integration_v1')
+  .select(['classification_2020'])
+  ;
+  
+var mascara_mapbiomas_1 = mapbiomas.select('classification_2020').eq(24);
+var mapbiomas = mapbiomas.updateMask(mascara_mapbiomas_1);
+
+var accCalc = function(p){
+    var listagem = ee.List.sequence(1,600).shuffle().slice(0,p,1); // sort and select point group
+    var points = totalPoints.filter(ee.Filter.inList('seq', listagem));
+    
+    var size = points.size();
+    
+    var sample = mascara_mapbiomas_1.unmask().sampleRegions({
+      collection: points.select('urb'),
+      geometries: true,
+      scale: 10
+    });
+    
+    var accuracyCalc = sample.errorMatrix('urb', 'classification_2020').array();
+    
+    var l1c1 = accuracyCalc.get([0,0]);
+    var l1c2 = accuracyCalc.get([0,1]);
+    var l2c1 = accuracyCalc.get([1,0]);
+    var l2c2 = accuracyCalc.get([1,1]);
+    
+    //var sensitiviy = l1c1.divide((l1c1.add(l1c2)));
+    //var specificity = l2c2.divide((l2c1.add(l2c2)));
+    var accuracy = (l1c1.add(l2c2).divide(l1c1.add(l1c2).add(l2c1).add(l2c2)));
+    
+return ee.Feature(null, {'accuracy': accuracy, 'nPoints': size});
+};
+
+var result_mapbiomas = ee.FeatureCollection(list.map(accCalc));
+
+Export.table.toDrive({
+  collection: result_mapbiomas,
+  description: 'accuracy-Mapbiomas-points',
+  selectors: ['accuracy', 'nPoints'],
+  fileFormat: 'CSV'});
+
+//Accuracy assessment function for GHSL
+var countries = ee.FeatureCollection('USDOS/LSIB/2017');
+
+//GHSL data
+var GHSL2018_BuiltUp = ee.Image('projects/ee-bmm-mapbiomas/assets/GHS_BUILT_LDSMT_GLOBE_R2018A_3857_30_V2').gte(4);
+GHSL2018_BuiltUp = GHSL2018_BuiltUp.clip(countries.filter(ee.Filter.eq('COUNTRY_NA','Brazil')));
+//print('GHSL2018_BuiltUp:',GHSL2018_BuiltUp)
+Map.addLayer(GHSL2018_BuiltUp,{},'GHSL2018_BuiltUp', false);
+
+var accCalc = function(p){
+    var listagem = ee.List.sequence(1,600).shuffle().slice(0,p,1); // sort and select point group
+    var points = totalPoints.filter(ee.Filter.inList('seq', listagem));
+    
+    var size = points.size();
+    
+    var sample = GHSL2018_BuiltUp.unmask().sampleRegions({
+      collection: points.select('urb'),
+      geometries: true,
+      scale: 10
+    });
+    
+    var accuracyCalc = sample.errorMatrix('urb', 'b1').array();
+    
+    var l1c1 = accuracyCalc.get([0,0]);
+    var l1c2 = accuracyCalc.get([0,1]);
+    var l2c1 = accuracyCalc.get([1,0]);
+    var l2c2 = accuracyCalc.get([1,1]);
+    
+    //var sensitiviy = l1c1.divide((l1c1.add(l1c2)));
+    //var specificity = l2c2.divide((l2c1.add(l2c2)));
+    var accuracy = (l1c1.add(l2c2).divide(l1c1.add(l1c2).add(l2c1).add(l2c2)));
+    
+return ee.Feature(null, {'accuracy': accuracy, 'nPoints': size});
+};
+
+var result_GHSL = ee.FeatureCollection(list.map(accCalc));
+
+Export.table.toDrive({
+  collection: result_GHSL,
+  description: 'accuracy-GHSL-points',
+  selectors: ['accuracy', 'nPoints'],
+  fileFormat: 'CSV'});
+
+Map.addLayer(mapbiomas, {}, 'Urban Mapbiomas');
+Map.addLayer(mascara2, {min:0, max: 2000, palette:['white', 'black'], opacity:0.5}, 'IRS classification');
+Map.addLayer(totalPoints, {color: 'red'}, 'Validation Points');
