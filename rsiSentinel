@@ -43,7 +43,7 @@ var start = '2020-1-1';
 var end   = '2020-12-31';
 
 function MNDWI(image) {
-  var mndwi = image.normalizedDifference(['B3', 'B11']).rename('MNDWI').toDouble();
+  var mndwi = image.normalizedDifference(['B11', 'B3']).rename('MNDWI').toDouble();
   return image.addBands(mndwi);
 }
  
